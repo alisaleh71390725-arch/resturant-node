@@ -58,12 +58,12 @@ exports.updateUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
   const { companyName, phone, whatsapp, location, direction, dollarRate, currency } = req.body;
 
+  let fileSizeKB = null; // Initialize variable here
+
   try {
     await sql.connect(config);
 
-    // -----------------------------
     // Check for duplicate company name
-    // -----------------------------
     const dupCheck = await sql.query(`
       SELECT userId FROM user_profiles 
       WHERE companyName = '${companyName.replace(/'/g, "''")}' AND userId != ${userId}
@@ -73,16 +73,12 @@ exports.updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: 'Company name is already taken' });
     }
 
-    // -----------------------------
-    // Get existing profile for logo handling
-    // -----------------------------
+    // Get existing profile
     const existingResult = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
     const existingProfile = existingResult.recordset[0];
     let logo = existingProfile?.logo || '';
 
-    // -----------------------------
     // Handle image upload
-    // -----------------------------
     if (req.file) {
       const originalPath = req.file.path;
       const ext = path.extname(req.file.originalname);
@@ -90,27 +86,29 @@ exports.updateUserProfile = async (req, res) => {
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
-      if (!fs.existsSync(outputDir)) {
-        fs.mkdirSync(outputDir, { recursive: true });
-      }
+      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
 
       const outputPath = path.join(outputDir, filename);
 
-      // Resize and compress to ~100 KB
+      // Resize & compress
       await resizeToTargetSize(originalPath, outputPath, 300, 300, 100);
+
+      // Get final file size
+      const stats = fs.statSync(outputPath);
+      fileSizeKB = (stats.size / 1024).toFixed(2); // size in KB
 
       fs.unlinkSync(originalPath);
 
+      // Remove old logo
       if (existingProfile?.logo) {
         const oldLogoPath = path.join('/mnt/uploads', existingProfile.logo);
         if (fs.existsSync(oldLogoPath)) fs.unlinkSync(oldLogoPath);
       }
+
       logo = path.join(userFolder, filename);
     }
 
-    // -----------------------------
-    // Update or insert profile in DB
-    // -----------------------------
+    // Update or insert profile
     const request = new sql.Request();
     request.input('companyName', sql.NVarChar(255), companyName);
     request.input('phone', sql.VarChar(20), phone);
@@ -142,14 +140,14 @@ exports.updateUserProfile = async (req, res) => {
       `);
     }
 
-    res.json({ message: 'Profile saved successfully', logoSizeKB: fileSizeKB  });
+    // Return response with file size if available
+    res.json({ message: 'Profile saved successfully', logoSizeKB });
 
   } catch (err) {
     console.error('Error saving profile:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
-
 
 
 exports.getProfileByCompanyName = async (req, res) => {
