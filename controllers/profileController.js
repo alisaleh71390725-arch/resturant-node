@@ -142,7 +142,7 @@ exports.updateUserProfile = async (req, res) => {
       `);
     }
 
-    res.json({ message: 'Profile saved successfully' });
+    res.json({ message: 'Profile saved successfully', logoSizeKB: fileSizeKB  });
 
   } catch (err) {
     console.error('Error saving profile:', err);
