@@ -3,28 +3,6 @@ const path = require('path');
 const sharp = require('sharp');
 const { sql, config } = require('../db/sqlConfig');
 
-// -----------------------------
-// Helper: Resize image to target size (~100 KB)
-// -----------------------------
-async function resizeToTargetSize(inputPath, outputPath, width = 300, height = 300, targetKB = 100) {
-  let quality = 80;
-  let buffer;
-
-  do {
-    buffer = await sharp(inputPath)
-      .resize(width, height, { fit: 'fill' })
-      .jpeg({ quality })
-      .toBuffer();
-
-    quality -= 5;
-  } while (buffer.length / 1024 > targetKB && quality > 20);
-
-  await sharp(buffer).toFile(outputPath);
-  return buffer.length / 1024; // final size in KB
-}
-
-
-
 exports.getUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
 
@@ -50,22 +28,14 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
-
-// -----------------------------
-// Update User Profile
-// -----------------------------
 exports.updateUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
-  const { companyName, phone, whatsapp, location, direction, dollarRate, currency } = req.body;
-
-  let logoSizeKB = null; // Ensure variable exists even if no file is uploaded
+  const { companyName, phone, whatsapp, location ,direction,dollarRate,currency} = req.body;
 
   try {
     await sql.connect(config);
 
-    // -----------------------------
-    // Check for duplicate company name
-    // -----------------------------
+    // ✅ Check if another user already uses the same company name
     const dupCheck = await sql.query(`
       SELECT userId FROM user_profiles 
       WHERE companyName = '${companyName.replace(/'/g, "''")}' AND userId != ${userId}
@@ -75,16 +45,13 @@ exports.updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: 'Company name is already taken' });
     }
 
-    // -----------------------------
-    // Get existing profile for logo handling
-    // -----------------------------
-    const existingResult = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
-    const existingProfile = existingResult.recordset[0];
+    // ✅ Get existing profile (for logo handling)
+    const existing = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
+    const existingProfile = existing.recordset[0];
+
     let logo = existingProfile?.logo || '';
 
-    // -----------------------------
-    // Handle image upload
-    // -----------------------------
+    // ✅ Handle image upload
     if (req.file) {
       const originalPath = req.file.path;
       const ext = path.extname(req.file.originalname);
@@ -92,35 +59,29 @@ exports.updateUserProfile = async (req, res) => {
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
-      if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
 
       const outputPath = path.join(outputDir, filename);
 
-      // Resize & compress to ~100 KB
-      await resizeToTargetSize(originalPath, outputPath, 300, 300, 100);
-
-      // Get final file size
-      const stats = fs.statSync(outputPath);
-      logoSizeKB = (stats.size / 1024).toFixed(2); // size in KB
+      await sharp(originalPath)
+        .resize(300, 300, { fit: 'fill' })
+        .toFile(outputPath);
 
       fs.unlinkSync(originalPath);
 
-      // Remove old logo safely
       if (existingProfile?.logo) {
         const oldLogoPath = path.join('/mnt/uploads', existingProfile.logo);
-        try {
-          if (fs.existsSync(oldLogoPath)) fs.unlinkSync(oldLogoPath);
-        } catch (err) {
-          console.warn('Failed to delete old logo:', err.message);
+        if (fs.existsSync(oldLogoPath)) {
+          fs.unlinkSync(oldLogoPath);
         }
       }
 
       logo = path.join(userFolder, filename);
     }
 
-    // -----------------------------
-    // Update or insert profile in DB
-    // -----------------------------
+    // ✅ Update or insert profile
     const request = new sql.Request();
     request.input('companyName', sql.NVarChar(255), companyName);
     request.input('phone', sql.VarChar(20), phone);
@@ -140,31 +101,27 @@ exports.updateUserProfile = async (req, res) => {
           whatsapp = @whatsapp,
           location = @location,
           direction = @direction,
-          dollarRate = @dollarRate,
-          currency = @currency,
+          dollarRate=@dollarRate,
+          currency=@currency,
           logo = @logo
         WHERE userId = @userId
       `);
     } else {
       await request.query(`
-        INSERT INTO user_profiles (companyName, phone, whatsapp, location, logo, userId, direction, dollarRate, currency)
-        VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId, @direction, @dollarRate, @currency)
+        INSERT INTO user_profiles (companyName, phone, whatsapp, location, logo, userId,direction,dollarRate,currency)
+        VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId,@direction,@dollarRate,@currency)
       `);
     }
 
-    // -----------------------------
-    // Return success response
-    // -----------------------------
-    res.json({
-      message: 'Profile saved successfully',
-      logoSizeKB, // null if no file was uploaded
-    });
+    res.json({ message: 'Profile saved successfully' });
 
   } catch (err) {
-    console.error('Error saving profile for userId', userId, err);
+    console.error('Error saving profile:', err);
     res.status(500).json({ error: 'Server error' });
   }
 };
+
+
 
 exports.getProfileByCompanyName = async (req, res) => {
   const companyName = req.params.companyName;
