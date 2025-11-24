@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { sql, config } = require('../db/sqlConfig');
+
 // -----------------------------
 // Helper: Resize image to target size (~100 KB)
 // -----------------------------
@@ -21,7 +22,6 @@ async function resizeToTargetSize(inputPath, outputPath, width = 300, height = 3
   await sharp(buffer).toFile(outputPath);
   return buffer.length / 1024; // final size in KB
 }
-
 
 
 
@@ -58,12 +58,14 @@ exports.updateUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
   const { companyName, phone, whatsapp, location, direction, dollarRate, currency } = req.body;
 
-  let fileSizeKB = null; // Initialize variable here
+  let logoSizeKB = null; // Ensure variable exists even if no file is uploaded
 
   try {
     await sql.connect(config);
 
+    // -----------------------------
     // Check for duplicate company name
+    // -----------------------------
     const dupCheck = await sql.query(`
       SELECT userId FROM user_profiles 
       WHERE companyName = '${companyName.replace(/'/g, "''")}' AND userId != ${userId}
@@ -73,12 +75,16 @@ exports.updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: 'Company name is already taken' });
     }
 
-    // Get existing profile
+    // -----------------------------
+    // Get existing profile for logo handling
+    // -----------------------------
     const existingResult = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
     const existingProfile = existingResult.recordset[0];
     let logo = existingProfile?.logo || '';
 
+    // -----------------------------
     // Handle image upload
+    // -----------------------------
     if (req.file) {
       const originalPath = req.file.path;
       const ext = path.extname(req.file.originalname);
@@ -90,25 +96,31 @@ exports.updateUserProfile = async (req, res) => {
 
       const outputPath = path.join(outputDir, filename);
 
-      // Resize & compress
+      // Resize & compress to ~100 KB
       await resizeToTargetSize(originalPath, outputPath, 300, 300, 100);
 
       // Get final file size
       const stats = fs.statSync(outputPath);
-      fileSizeKB = (stats.size / 1024).toFixed(2); // size in KB
+      logoSizeKB = (stats.size / 1024).toFixed(2); // size in KB
 
       fs.unlinkSync(originalPath);
 
-      // Remove old logo
+      // Remove old logo safely
       if (existingProfile?.logo) {
         const oldLogoPath = path.join('/mnt/uploads', existingProfile.logo);
-        if (fs.existsSync(oldLogoPath)) fs.unlinkSync(oldLogoPath);
+        try {
+          if (fs.existsSync(oldLogoPath)) fs.unlinkSync(oldLogoPath);
+        } catch (err) {
+          console.warn('Failed to delete old logo:', err.message);
+        }
       }
 
       logo = path.join(userFolder, filename);
     }
 
-    // Update or insert profile
+    // -----------------------------
+    // Update or insert profile in DB
+    // -----------------------------
     const request = new sql.Request();
     request.input('companyName', sql.NVarChar(255), companyName);
     request.input('phone', sql.VarChar(20), phone);
@@ -140,15 +152,19 @@ exports.updateUserProfile = async (req, res) => {
       `);
     }
 
-    // Return response with file size if available
-    res.json({ message: 'Profile saved successfully', logoSizeKB });
+    // -----------------------------
+    // Return success response
+    // -----------------------------
+    res.json({
+      message: 'Profile saved successfully',
+      logoSizeKB, // null if no file was uploaded
+    });
 
   } catch (err) {
-    console.error('Error saving profile:', err);
+    console.error('Error saving profile for userId', userId, err);
     res.status(500).json({ error: 'Server error' });
   }
 };
-
 
 exports.getProfileByCompanyName = async (req, res) => {
   const companyName = req.params.companyName;
