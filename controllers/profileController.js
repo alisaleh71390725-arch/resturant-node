@@ -2,6 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { sql, config } = require('../db/sqlConfig');
+// -----------------------------
+// Helper: Resize image to target size (~100 KB)
+// -----------------------------
+async function resizeToTargetSize(inputPath, outputPath, width = 300, height = 300, targetKB = 100) {
+  let quality = 80;
+  let buffer;
+
+  do {
+    buffer = await sharp(inputPath)
+      .resize(width, height, { fit: 'fill' })
+      .jpeg({ quality })
+      .toBuffer();
+
+    quality -= 5;
+  } while (buffer.length / 1024 > targetKB && quality > 20);
+
+  await sharp(buffer).toFile(outputPath);
+  return buffer.length / 1024; // final size in KB
+}
+
+
+
 
 exports.getUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
@@ -28,14 +50,20 @@ exports.getUserProfile = async (req, res) => {
   }
 };
 
+
+// -----------------------------
+// Update User Profile
+// -----------------------------
 exports.updateUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
-  const { companyName, phone, whatsapp, location ,direction,dollarRate,currency} = req.body;
+  const { companyName, phone, whatsapp, location, direction, dollarRate, currency } = req.body;
 
   try {
     await sql.connect(config);
 
-    // ✅ Check if another user already uses the same company name
+    // -----------------------------
+    // Check for duplicate company name
+    // -----------------------------
     const dupCheck = await sql.query(`
       SELECT userId FROM user_profiles 
       WHERE companyName = '${companyName.replace(/'/g, "''")}' AND userId != ${userId}
@@ -45,13 +73,16 @@ exports.updateUserProfile = async (req, res) => {
       return res.status(400).json({ error: 'Company name is already taken' });
     }
 
-    // ✅ Get existing profile (for logo handling)
-    const existing = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
-    const existingProfile = existing.recordset[0];
-
+    // -----------------------------
+    // Get existing profile for logo handling
+    // -----------------------------
+    const existingResult = await sql.query(`SELECT logo FROM user_profiles WHERE userId = ${userId}`);
+    const existingProfile = existingResult.recordset[0];
     let logo = existingProfile?.logo || '';
 
-    // ✅ Handle image upload
+    // -----------------------------
+    // Handle image upload
+    // -----------------------------
     if (req.file) {
       const originalPath = req.file.path;
       const ext = path.extname(req.file.originalname);
@@ -65,23 +96,21 @@ exports.updateUserProfile = async (req, res) => {
 
       const outputPath = path.join(outputDir, filename);
 
-      await sharp(originalPath)
-        .resize(300, 300, { fit: 'fill' })
-        .toFile(outputPath);
+      // Resize and compress to ~100 KB
+      await resizeToTargetSize(originalPath, outputPath, 300, 300, 100);
 
       fs.unlinkSync(originalPath);
 
       if (existingProfile?.logo) {
         const oldLogoPath = path.join('/mnt/uploads', existingProfile.logo);
-        if (fs.existsSync(oldLogoPath)) {
-          fs.unlinkSync(oldLogoPath);
-        }
+        if (fs.existsSync(oldLogoPath)) fs.unlinkSync(oldLogoPath);
       }
-
       logo = path.join(userFolder, filename);
     }
 
-    // ✅ Update or insert profile
+    // -----------------------------
+    // Update or insert profile in DB
+    // -----------------------------
     const request = new sql.Request();
     request.input('companyName', sql.NVarChar(255), companyName);
     request.input('phone', sql.VarChar(20), phone);
@@ -101,15 +130,15 @@ exports.updateUserProfile = async (req, res) => {
           whatsapp = @whatsapp,
           location = @location,
           direction = @direction,
-          dollarRate=@dollarRate,
-          currency=@currency,
+          dollarRate = @dollarRate,
+          currency = @currency,
           logo = @logo
         WHERE userId = @userId
       `);
     } else {
       await request.query(`
-        INSERT INTO user_profiles (companyName, phone, whatsapp, location, logo, userId,direction,dollarRate,currency)
-        VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId,@direction,@dollarRate,@currency)
+        INSERT INTO user_profiles (companyName, phone, whatsapp, location, logo, userId, direction, dollarRate, currency)
+        VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId, @direction, @dollarRate, @currency)
       `);
     }
 
