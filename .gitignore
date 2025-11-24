@@ -1,0 +1,12 @@
+# Node.js dependencies
+node_modules/
+
+# Environment files
+.env
+
+# Uploaded service account keys
+uploads/*.json
+
+# OS generated files (optional)
+.DS_Store
+Thumbs.db

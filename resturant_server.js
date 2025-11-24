@@ -1,0 +1,22 @@
+const express = require('express');
+require('dotenv').config();
+const cors = require('cors');
+const bodyParser = require('body-parser');
+const userRoutes = require('./routes/userRoutes');
+const itemRoutes = require('./routes/itemRoutes');
+const categoryRoutes = require('./routes/categoryRoutes');
+const profileRoutes = require('./routes/profileRoutes');
+const roleRoutes = require('./routes/roleRoutes');
+const app = express();
+const port = 8080;
+app.use(cors());
+app.use(bodyParser.json());
+app.use('/api/users', userRoutes);
+app.use('/api/items', itemRoutes);
+app.use('/api/category', categoryRoutes);
+app.use('/api/uploads', express.static('/mnt/uploads'));
+app.use('/api/profile', profileRoutes);
+app.use('/api/roles', roleRoutes);
+app.listen(port,'0.0.0.0', () => {
+  console.log(`Server running on port ${port}`);
+});

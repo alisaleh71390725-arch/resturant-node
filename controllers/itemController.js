@@ -1,0 +1,234 @@
+const fs = require('fs');
+const path = require('path');
+const sharp = require('sharp');
+const { sql, config } = require('../db/sqlConfig');
+
+const getAllItems = async (req, res) => {
+  try {
+    await sql.connect(config);
+    const result = await sql.query(`
+      SELECT 
+        i.*, 
+        c.categoryName
+      FROM items i
+      LEFT JOIN category c ON i.categoryId = c.categoryId
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const getAllItemsById = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await sql.connect(config);
+    const result = await sql.query(`
+      SELECT 
+        i.*, 
+        c.categoryName
+      FROM items i
+      LEFT JOIN category c ON i.categoryId = c.categoryId
+      WHERE i.userId = ${userId}
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const getCategories = async (req, res) => {
+  const { userId } = req.params;
+  try {
+    await sql.connect(config);
+    const result = await sql.query(`
+      SELECT * FROM category WHERE userId = ${userId}
+    `);
+    res.json(result.recordset);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const addItem = async (req, res) => {
+  const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
+
+  let item_picture = '';
+
+  try {
+     await sql.connect(config);
+    const existing = await sql.query(`
+      SELECT * FROM items 
+      WHERE userId = ${userId} AND itemName = N'${itemName}'
+    `);
+    if (existing.recordset.length > 0) {
+      return res.status(400).json({ error: 'Item name already exists' });
+    }
+    
+    if (req.file) {
+      const originalPath = req.file.path;
+      const ext = path.extname(req.file.originalname);
+      const filename = `resized-${Date.now()}${ext}`;
+      const userFolder = `user_${userId}`;
+      const outputDir = path.join('/mnt/uploads', userFolder);
+
+
+      // Create user folder if doesn't exist
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const outputPath = path.join(outputDir, filename);
+
+      // Resize and save image to user folder
+      await sharp(originalPath)
+        .resize(800, 600, { fit: 'fill' })
+        .toFile(outputPath);
+
+      // Delete the original uploaded file
+      fs.unlinkSync(originalPath);
+
+      // Save relative path in DB
+      item_picture = path.join(userFolder, filename);
+    }
+
+    await sql.connect(config);
+    await sql.query(`
+      INSERT INTO items (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
+      VALUES (
+        N'${itemName}', 
+        N'${itemDesc}', 
+        ${itemPrice}, 
+        ${categoryId}, 
+        ${userId}, 
+        '${item_picture}'
+      )
+    `);
+
+    res.status(201).json({ message: 'Item created successfully' });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const updateItem = async (req, res) => {
+  const { itemId } = req.params;
+  const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
+
+  let item_picture = req.body.item_picture || '';
+
+  try {
+    await sql.connect(config);
+    const duplicateCheck = await sql.query(`
+      SELECT * FROM items 
+      WHERE userId = ${userId} AND itemName = N'${itemName}' AND itemId != ${itemId}
+    `);
+
+    if (duplicateCheck.recordset.length > 0) {
+      return res.status(400).json({ error: 'Item name alrady exists!' });
+    }
+    // Get existing item and its image path
+    const existingItemResult = await sql.query(`SELECT item_picture FROM items WHERE itemId = ${itemId}`);
+    const existingItem = existingItemResult.recordset[0];
+
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+   let oldImagePath = existingItem.item_picture
+      ? path.join('/mnt/uploads', existingItem.item_picture)
+      : null;
+
+    if (req.file) {
+      const originalPath = req.file.path;
+      const ext = path.extname(req.file.originalname);
+      const filename = `resized-${Date.now()}${ext}`;
+      const userFolder = `user_${userId}`;
+      const outputDir = path.join('/mnt/uploads', userFolder);
+
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+
+      const outputPath = path.join(outputDir, filename);
+
+      await sharp(originalPath)
+        .resize(800, 600, { fit: 'fill' })
+        .toFile(outputPath);
+
+      fs.unlinkSync(originalPath);
+
+      item_picture = path.join(userFolder, filename);
+
+      // Delete old image file
+      if (oldImagePath && fs.existsSync(oldImagePath)) {
+        fs.unlinkSync(oldImagePath);
+      }
+    } else {
+      // No new file uploaded, keep old image path
+      item_picture = existingItem.item_picture;
+    }
+
+    // Update DB record
+    await sql.query(`
+      UPDATE items SET
+        itemName = N'${itemName}',
+        itemDesc = N'${itemDesc}',
+        itemPrice = ${itemPrice},
+        categoryId = ${categoryId},
+        userId = ${userId},
+        item_picture = '${item_picture}'
+      WHERE itemId = ${itemId}
+    `);
+
+    res.json({ message: 'Item updated successfully' });
+
+  } catch (err) {
+    console.error('Error updating item:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+const deleteItem = async (req, res) => {
+  const { itemId } = req.params;
+
+  try {
+    await sql.connect(config);
+
+    // Get item image path
+    const result = await sql.query(`SELECT item_picture FROM items WHERE itemId = ${itemId}`);
+    const item = result.recordset[0];
+
+    if (!item) {
+      return res.status(404).json({ error: 'Item not found' });
+    }
+
+    
+    const imagePath = item.item_picture ? path.join('/mnt/uploads', item.item_picture) : null;
+
+    // Delete image file if exists
+    if (imagePath && fs.existsSync(imagePath)) {
+      fs.unlinkSync(imagePath);
+    }
+
+
+    // Delete item from DB
+    await sql.query(`DELETE FROM items WHERE itemId = ${itemId}`);
+
+    res.json({ message: 'Item and image deleted successfully' });
+
+  } catch (err) {
+    console.error('Error deleting item:', err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+module.exports = {
+  getAllItems,
+  getAllItemsById,
+  getCategories,
+  addItem,
+  updateItem,
+  deleteItem,
+};
