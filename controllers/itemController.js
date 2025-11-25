@@ -137,18 +137,10 @@ const addItem = async (req, res) => {
       finalImageSizeKB = (finalBytes / 1024).toFixed(2);
     }
 
-    await sql.query(`
-      INSERT INTO items 
-        (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
-      VALUES (
-        N'${itemName}', 
-        N'${itemDesc}', 
-        ${itemPrice}, 
-        ${categoryId}, 
-        ${userId}, 
-        '${item_picture}'
-      )
-    `);
+    await sql.query`
+  INSERT INTO items (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
+  VALUES (${itemName}, ${itemDesc}, ${itemPrice}, ${categoryId}, ${userId}, ${item_picture})
+`;
 
     res.status(201).json({
       message: 'Item created successfully',
@@ -234,14 +226,15 @@ const updateItem = async (req, res) => {
     // Update DB record
     await sql.query(`
       UPDATE items SET
-        itemName = N'${itemName}',
-        itemDesc = N'${itemDesc}',
+        itemName = ${itemName},
+        itemDesc = ${itemDesc},
         itemPrice = ${itemPrice},
         categoryId = ${categoryId},
         userId = ${userId},
-        item_picture = '${item_picture}'
+        item_picture = ${item_picture}
       WHERE itemId = ${itemId}
     `);
+    
 
     res.json({
   message: 'Item updated successfully',
