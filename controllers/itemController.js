@@ -243,7 +243,12 @@ const updateItem = async (req, res) => {
       WHERE itemId = ${itemId}
     `);
 
-    res.json({ message: 'Item updated successfully' });
+    res.json({
+  message: 'Item updated successfully',
+  originalSizeKB: originalImageSizeKB ? `${originalImageSizeKB} KB` : null,
+  imageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
+  imagePath: item_picture
+});
 
   } catch (err) {
     console.error('Error updating item:', err);
