@@ -165,33 +165,26 @@ const updateItem = async (req, res) => {
 
   try {
     await sql.connect(config);
-
-    // Check for duplicate item name
-    const duplicateCheck = await sql.query(
-      `SELECT * FROM items WHERE userId = @userId AND itemName = @itemName AND itemId != @itemId`,
-      { userId, itemName, itemId }
-    );
+    const duplicateCheck = await sql.query(`
+      SELECT * FROM items 
+      WHERE userId = ${userId} AND itemName = N'${itemName}' AND itemId != ${itemId}
+    `);
 
     if (duplicateCheck.recordset.length > 0) {
-      return res.status(400).json({ error: 'Item name already exists!' });
+      return res.status(400).json({ error: 'Item name alrady exists!' });
     }
-
     // Get existing item and its image path
-    const existingItemResult = await sql.query(
-      `SELECT item_picture FROM items WHERE itemId = @itemId`,
-      { itemId }
-    );
+    const existingItemResult = await sql.query(`SELECT item_picture FROM items WHERE itemId = ${itemId}`);
     const existingItem = existingItemResult.recordset[0];
 
     if (!existingItem) {
       return res.status(404).json({ error: 'Item not found' });
     }
 
-    let oldImagePath = existingItem.item_picture
+   let oldImagePath = existingItem.item_picture
       ? path.join('/mnt/uploads', existingItem.item_picture)
       : null;
 
-    // Handle file upload
     if (req.file) {
       const originalPath = req.file.path;
       const originalStats = fs.statSync(originalPath);
@@ -205,47 +198,51 @@ const updateItem = async (req, res) => {
       }
 
       const outputPath = path.join(outputDir, filename);
-      let finalBytes;
+       let finalBytes;
 
       if (originalStats.size < 100 * 1024) {
+        // Copy small images as-is (just change extension)
         await sharp(originalPath).jpeg().toFile(outputPath);
         finalBytes = fs.statSync(outputPath).size;
       } else {
+        // Compress large images
         finalBytes = await compressToUnder100KB(originalPath, outputPath);
       }
 
-      fs.unlinkSync(originalPath);
+      fs.unlinkSync(originalPath); // remove original
       item_picture = path.join(userFolder, filename);
       finalImageSizeKB = (finalBytes / 1024).toFixed(2);
+     
 
-      // Delete old image
+      // Delete old image file
       if (oldImagePath && fs.existsSync(oldImagePath)) {
         fs.unlinkSync(oldImagePath);
       }
     } else {
-      // No new file uploaded, keep old image
+      // No new file uploaded, keep old image path
       item_picture = existingItem.item_picture;
     }
 
-    // --- UPDATE DB USING PARAMETERS ---
-    await sql.query(
-      `UPDATE items SET
-         itemName = @itemName,
-         itemDesc = @itemDesc,
-         itemPrice = @itemPrice,
-         categoryId = @categoryId,
-         userId = @userId,
-         item_picture = @item_picture
-       WHERE itemId = @itemId`,
-      { itemName, itemDesc, itemPrice, categoryId, userId, item_picture, itemId }
-    );
+    // Update DB record
+    await sql.query(`
+      UPDATE items SET
+        itemName = ${itemName},
+        itemDesc = ${itemDesc},
+        itemPrice = ${itemPrice},
+        categoryId = ${categoryId},
+        userId = ${userId},
+        item_picture = '${item_picture}'
+      WHERE itemId = ${itemId}
+    `);
+    
 
     res.json({
-      message: 'Item updated successfully',
-      originalSizeKB: originalImageSizeKB ? `${originalImageSizeKB} KB` : null,
-      imageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
-      imagePath: item_picture
-    });
+  message: 'Item updated successfully',
+  originalSizeKB: originalImageSizeKB ? `${originalImageSizeKB} KB` : null,
+  imageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
+  imagePath: item_picture
+});
+
   } catch (err) {
     console.error('Error updating item:', err);
     res.status(500).json({ error: err.message });
