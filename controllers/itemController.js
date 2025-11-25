@@ -162,11 +162,14 @@ const addItem = async (req, res) => {
   }
 };
 
+
 const updateItem = async (req, res) => {
   const { itemId } = req.params;
   const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
 
   let item_picture = req.body.item_picture || '';
+  let finalImageSizeKB = null;
+  let originalImageSizeKB = null;
 
   try {
     await sql.connect(config);
@@ -192,8 +195,9 @@ const updateItem = async (req, res) => {
 
     if (req.file) {
       const originalPath = req.file.path;
-      const ext = path.extname(req.file.originalname);
-      const filename = `resized-${Date.now()}${ext}`;
+      const originalStats = fs.statSync(originalPath);
+      originalImageSizeKB = (originalStats.size / 1024).toFixed(2);
+      const filename = `compressed-${Date.now()}.jpg`;
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
@@ -202,14 +206,21 @@ const updateItem = async (req, res) => {
       }
 
       const outputPath = path.join(outputDir, filename);
+       let finalBytes;
 
-      await sharp(originalPath)
-        .resize(800, 600, { fit: 'fill' })
-        .toFile(outputPath);
+      if (originalStats.size < 100 * 1024) {
+        // Copy small images as-is (just change extension)
+        await sharp(originalPath).jpeg().toFile(outputPath);
+        finalBytes = fs.statSync(outputPath).size;
+      } else {
+        // Compress large images
+        finalBytes = await compressToUnder100KB(originalPath, outputPath);
+      }
 
-      fs.unlinkSync(originalPath);
-
+      fs.unlinkSync(originalPath); // remove original
       item_picture = path.join(userFolder, filename);
+      finalImageSizeKB = (finalBytes / 1024).toFixed(2);
+     
 
       // Delete old image file
       if (oldImagePath && fs.existsSync(oldImagePath)) {
