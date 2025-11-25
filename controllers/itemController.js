@@ -226,8 +226,8 @@ const updateItem = async (req, res) => {
     // Update DB record
       await sql.query(`
       UPDATE items SET
-        itemName = N'${itemName}',
-        itemDesc = N'${itemDesc}',
+        itemName = ${itemName},
+        itemDesc = ${itemDesc},
         itemPrice = ${itemPrice},
         categoryId = ${categoryId},
         userId = ${userId},
