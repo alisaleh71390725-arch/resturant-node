@@ -85,11 +85,11 @@ const addItem = async (req, res) => {
 
   let item_picture = '';
   let finalImageSizeKB = null;
+  let originalImageSizeKB = null;
 
   try {
     await sql.connect(config);
 
-    // Check duplicate item name
     const existing = await sql.query(`
       SELECT * FROM items
       WHERE userId = ${userId} AND itemName = N'${itemName}'
@@ -99,13 +99,17 @@ const addItem = async (req, res) => {
       return res.status(400).json({ error: 'Item name already exists' });
     }
 
-    // ---------------------------------------------
-    //               IMAGE HANDLING
-    // ---------------------------------------------
+    // --------------------------
+    // Image Handling
+    // --------------------------
     if (req.file) {
       const originalPath = req.file.path;
 
-      const filename = `compressed-${Date.now()}.jpg`; // force jpeg
+      // Read original file size
+      const originalStats = fs.statSync(originalPath);
+      originalImageSizeKB = (originalStats.size / 1024).toFixed(2);
+
+      const filename = `compressed-${Date.now()}.jpg`;
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
@@ -115,19 +119,24 @@ const addItem = async (req, res) => {
 
       const outputPath = path.join(outputDir, filename);
 
-      // 🔥 Compress image
-      const finalBytes = await compressToUnder100KB(originalPath, outputPath);
+      let finalBytes;
 
-      // Convert to KB with 2 decimals
-      finalImageSizeKB = (finalBytes / 1024).toFixed(2);
+      // 🔥 If original image is already smaller than 100 KB → DO NOT COMPRESS
+      if (originalStats.size < 100 * 1024) {
+        fs.copyFileSync(originalPath, outputPath);
+        finalBytes = originalStats.size;
+      } else {
+        // 🔥 Compress only if larger than 100 KB
+        finalBytes = await compressToUnder100KB(originalPath, outputPath);
+      }
 
-      // Delete original
+      // Remove original file
       fs.unlinkSync(originalPath);
 
       item_picture = path.join(userFolder, filename);
+      finalImageSizeKB = (finalBytes / 1024).toFixed(2);
     }
 
-    // Insert into DB
     await sql.query(`
       INSERT INTO items 
         (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
@@ -141,9 +150,9 @@ const addItem = async (req, res) => {
       )
     `);
 
-    // 👇 Send the image size in the message
     res.status(201).json({
       message: 'Item created successfully',
+      originalSizeKB: originalImageSizeKB ? `${originalImageSizeKB} KB` : null,
       imageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
       imagePath: item_picture
     });
@@ -152,6 +161,7 @@ const addItem = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
 const updateItem = async (req, res) => {
   const { itemId } = req.params;
   const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
