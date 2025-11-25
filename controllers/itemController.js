@@ -231,7 +231,7 @@ const updateItem = async (req, res) => {
         itemPrice = ${itemPrice},
         categoryId = ${categoryId},
         userId = ${userId},
-        item_picture = ${item_picture}
+        item_picture = '${item_picture}'
       WHERE itemId = ${itemId}
     `);
     
