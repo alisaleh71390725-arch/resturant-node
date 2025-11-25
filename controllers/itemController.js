@@ -223,17 +223,27 @@ const updateItem = async (req, res) => {
       item_picture = existingItem.item_picture;
     }
 
-    // Update DB record
-      await sql.query(`
-      UPDATE items SET
-        itemName = ${itemName},
-        itemDesc = ${itemDesc},
-        itemPrice = ${itemPrice},
-        categoryId = ${categoryId},
-        userId = ${userId},
-        item_picture = '${item_picture}'
-      WHERE itemId = ${itemId}
-    `);
+    const request = new sql.Request();
+request.input('itemName', sql.NVarChar, itemName);
+request.input('itemDesc', sql.NVarChar, itemDesc);
+request.input('itemPrice', sql.Decimal(10,2), itemPrice);
+request.input('categoryId', sql.Int, categoryId);
+request.input('userId', sql.Int, userId);
+request.input('item_picture', sql.NVarChar, item_picture);
+request.input('itemId', sql.Int, itemId);
+
+await request.query(`
+  UPDATE items
+  SET
+    itemName = @itemName,
+    itemDesc = @itemDesc,
+    itemPrice = @itemPrice,
+    categoryId = @categoryId,
+    userId = @userId,
+    item_picture = @item_picture
+  WHERE itemId = @itemId
+`);
+
     
 
     res.json({
