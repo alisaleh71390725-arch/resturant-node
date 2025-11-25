@@ -2,6 +2,37 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { sql, config } = require('../db/sqlConfig');
+const compressToUnder100KB = async (inputPath, outputPath) => {
+  let quality = 80;
+  let width = null;
+
+  let buffer = await sharp(inputPath)
+    .jpeg({ quality })
+    .toBuffer();
+
+  // Step 1: Lower quality
+  while (buffer.length > 100 * 1024 && quality > 30) {
+    quality -= 10;
+    buffer = await sharp(inputPath)
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  // Step 2: Reduce width if still >100kb
+  width = 1200;
+  while (buffer.length > 100 * 1024 && width > 400) {
+    width -= 200;
+    buffer = await sharp(inputPath)
+      .resize({ width })
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  // Save final image
+  await sharp(buffer).toFile(outputPath);
+
+  return buffer.length; // return bytes
+};
 
 exports.getUserProfile = async (req, res) => {
   const userId = parseInt(req.params.id);
@@ -50,12 +81,16 @@ exports.updateUserProfile = async (req, res) => {
     const existingProfile = existing.recordset[0];
 
     let logo = existingProfile?.logo || '';
+    let finalImageSizeKB = null;
+    let originalImageSizeKB = null;
 
     // ✅ Handle image upload
     if (req.file) {
       const originalPath = req.file.path;
-      const ext = path.extname(req.file.originalname);
-      const filename = `profile-${Date.now()}${ext}`;
+      const originalStats = fs.statSync(originalPath);
+      originalImageSizeKB = (originalStats.size / 1024).toFixed(2);
+      
+     const filename = `profile-${Date.now()}.jpg`;
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
@@ -64,12 +99,18 @@ exports.updateUserProfile = async (req, res) => {
       }
 
       const outputPath = path.join(outputDir, filename);
-
-      await sharp(originalPath)
-        .resize(300, 300, { fit: 'fill' })
-        .toFile(outputPath);
-
+      let finalBytes;
+      if (originalStats.size < 100 * 1024) {
+        // Small image → just convert to jpg
+        await sharp(originalPath).jpeg().toFile(outputPath);
+        finalBytes = fs.statSync(outputPath).size;
+      } else {
+        // Large image → compress
+        finalBytes = await compressToUnder100KB(originalPath, outputPath);
+      }
+      
       fs.unlinkSync(originalPath);
+      finalImageSizeKB = (finalBytes / 1024).toFixed(2);
 
       if (existingProfile?.logo) {
         const oldLogoPath = path.join('/mnt/uploads', existingProfile.logo);
@@ -113,7 +154,12 @@ exports.updateUserProfile = async (req, res) => {
       `);
     }
 
-    res.json({ message: 'Profile saved successfully' });
+    res.json({
+      message: 'Profile saved successfully',
+      originalImageSizeKB: originalImageSizeKB ? `${originalImageSizeKB} KB` : null,
+      finalImageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
+      logoPath: logo
+    });
 
   } catch (err) {
     console.error('Error saving profile:', err);
