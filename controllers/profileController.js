@@ -153,6 +153,15 @@ exports.updateUserProfile = async (req, res) => {
         VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId,@direction,@dollarRate,@currency)
       `);
     }
+      const profileUrl = `http://192.168.0.103/TechGuide/${encodeURIComponent(companyName)}`;
+    await new sql.Request()
+      .input('url', sql.NVarChar(500), profileUrl)
+      .input('userId', sql.Int, userId)
+      .query(`
+        UPDATE users
+        SET url = @url
+        WHERE userId = @userId
+      `);
 
     res.json({
       message: 'Profile saved successfully',
