@@ -49,7 +49,8 @@ const getExpiration = async (req, res) => {
     const result = await sql.query`
       SELECT userId,
              CONVERT(date, startTime) AS startTime,
-             CONVERT(date, endTime) AS endTime
+             CONVERT(date, endTime) AS endTime,
+             url
       FROM users 
       WHERE userId = ${userId}
     `;
