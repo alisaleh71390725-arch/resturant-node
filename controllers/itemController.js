@@ -2,7 +2,37 @@ const fs = require('fs');
 const path = require('path');
 const sharp = require('sharp');
 const { sql, config } = require('../db/sqlConfig');
+const compressToUnder100KB = async (inputPath, outputPath) => {
+  let quality = 80;
+  let width = null;
 
+  let buffer = await sharp(inputPath)
+    .jpeg({ quality })
+    .toBuffer();
+
+  // Step 1: Lower quality
+  while (buffer.length > 100 * 1024 && quality > 30) {
+    quality -= 10;
+    buffer = await sharp(inputPath)
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  // Step 2: Reduce width if still >100kb
+  width = 1200;
+  while (buffer.length > 100 * 1024 && width > 400) {
+    width -= 200;
+    buffer = await sharp(inputPath)
+      .resize({ width })
+      .jpeg({ quality })
+      .toBuffer();
+  }
+
+  // Save final image
+  await sharp(buffer).toFile(outputPath);
+
+  return buffer.length; // return bytes
+};
 const getAllItems = async (req, res) => {
   try {
     await sql.connect(config);
@@ -54,47 +84,53 @@ const addItem = async (req, res) => {
   const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
 
   let item_picture = '';
+  let finalImageSizeKB = null;
 
   try {
-     await sql.connect(config);
+    await sql.connect(config);
+
+    // Check duplicate item name
     const existing = await sql.query(`
-      SELECT * FROM items 
+      SELECT * FROM items
       WHERE userId = ${userId} AND itemName = N'${itemName}'
     `);
+
     if (existing.recordset.length > 0) {
       return res.status(400).json({ error: 'Item name already exists' });
     }
-    
+
+    // ---------------------------------------------
+    //               IMAGE HANDLING
+    // ---------------------------------------------
     if (req.file) {
       const originalPath = req.file.path;
-      const ext = path.extname(req.file.originalname);
-      const filename = `resized-${Date.now()}${ext}`;
+
+      const filename = `compressed-${Date.now()}.jpg`; // force jpeg
       const userFolder = `user_${userId}`;
       const outputDir = path.join('/mnt/uploads', userFolder);
 
-
-      // Create user folder if doesn't exist
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
 
       const outputPath = path.join(outputDir, filename);
 
-      // Resize and save image to user folder
-      await sharp(originalPath)
-        .resize(800, 600, { fit: 'fill' })
-        .toFile(outputPath);
+      // 🔥 Compress image
+      const finalBytes = await compressToUnder100KB(originalPath, outputPath);
 
-      // Delete the original uploaded file
+      // Convert to KB with 2 decimals
+      finalImageSizeKB = (finalBytes / 1024).toFixed(2);
+
+      // Delete original
       fs.unlinkSync(originalPath);
 
-      // Save relative path in DB
       item_picture = path.join(userFolder, filename);
     }
 
-    await sql.connect(config);
+    // Insert into DB
     await sql.query(`
-      INSERT INTO items (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
+      INSERT INTO items 
+        (itemName, itemDesc, itemPrice, categoryId, userId, item_picture)
       VALUES (
         N'${itemName}', 
         N'${itemDesc}', 
@@ -105,13 +141,17 @@ const addItem = async (req, res) => {
       )
     `);
 
-    res.status(201).json({ message: 'Item created successfully' });
+    // 👇 Send the image size in the message
+    res.status(201).json({
+      message: 'Item created successfully',
+      imageSizeKB: finalImageSizeKB ? `${finalImageSizeKB} KB` : null,
+      imagePath: item_picture
+    });
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
-
 const updateItem = async (req, res) => {
   const { itemId } = req.params;
   const { itemName, itemDesc, itemPrice, categoryId, userId } = req.body;
