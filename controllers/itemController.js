@@ -234,7 +234,7 @@ const duplicateCheck = await request.query(`
       item_picture = existingItem.item_picture;
     }
 
-    const request = new sql.Request();
+
 request.input('itemName', sql.NVarChar, itemName);
 request.input('itemDesc', sql.NVarChar, itemDesc);
 request.input('itemPrice', sql.Decimal(10,2), itemPrice);
