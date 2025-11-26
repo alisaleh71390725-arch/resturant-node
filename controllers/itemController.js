@@ -92,7 +92,7 @@ const addItem = async (req, res) => {
 
     const existing = await sql.query(`
       SELECT * FROM items
-      WHERE userId = ${userId} AND itemName = N'${itemName}'
+      WHERE userId = ${userId} AND itemName = ${itemName}
     `);
 
     if (existing.recordset.length > 0) {
@@ -167,7 +167,7 @@ const updateItem = async (req, res) => {
     await sql.connect(config);
     const duplicateCheck = await sql.query(`
       SELECT * FROM items 
-      WHERE userId = ${userId} AND itemName = N'${itemName}' AND itemId != ${itemId}
+      WHERE userId = ${userId} AND itemName = ${itemName} AND itemId != ${itemId}
     `);
 
     if (duplicateCheck.recordset.length > 0) {
