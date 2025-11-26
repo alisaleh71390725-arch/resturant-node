@@ -239,6 +239,8 @@ exports.getAllProfiles = async (req, res) => {
 
     const result = await sql.query(`
       SELECT * FROM user_profiles
+      ORDER BY companyName ASC
+      
     `);
 
     const profiles = result.recordset.map(profile => {
