@@ -105,7 +105,7 @@ const deleteCategory = async (req, res) => {
 const getAllCategories = async (req, res) => {
   try {
     await sql.connect(config);
-    const result = await sql.query(`SELECT * FROM category`); 
+    const result = await sql.query(`SELECT * FROM category ORDER BY categoryName ASC`); 
     res.json(result.recordset);
   } catch (err) {
     console.error('Error fetching categories:', err);
