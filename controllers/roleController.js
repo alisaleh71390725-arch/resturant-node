@@ -86,7 +86,7 @@ const deleteRole = async (req, res) => {
 const getAllRoles = async (req, res) => {
   try {
     await sql.connect(config);
-    const result = await sql.query`SELECT * FROM Roles`;
+    const result = await sql.query`SELECT * FROM Roles ORDER BY roleName ASC`;
     res.json(result.recordset);
   } catch (err) {
     console.error('Error fetching roles:', err);
