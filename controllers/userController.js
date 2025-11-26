@@ -18,6 +18,7 @@ const getAllUsers = async (req, res) => {
         CONVERT(date, startTime) AS startTime,
         CONVERT(date, endTime) AS endTime
       FROM users
+      Order By userName ASC
     `;
     res.json(result.recordset);
   } catch (err) {
