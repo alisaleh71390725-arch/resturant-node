@@ -170,12 +170,12 @@ const updateItem = async (req, res) => {
 
   try {
     await sql.connect(config);
-   const request = new sql.Request();
-request.input('userId', sql.Int, userId);
-request.input('itemName', sql.NVarChar, itemName);
-request.input('itemId', sql.Int, itemId);
+   const checkRequest = new sql.Request();
+checkRequest.input('userId', sql.Int, userId);
+checkRequest.input('itemName', sql.NVarChar, itemName);
+checkRequest.input('itemId', sql.Int, itemId);
 
-const duplicateCheck = await request.query(`
+const duplicateCheck = await checkRequest.query(`
   SELECT * FROM items 
   WHERE userId = @userId AND itemName = @itemName AND itemId != @itemId
 `);
@@ -234,16 +234,16 @@ const duplicateCheck = await request.query(`
       item_picture = existingItem.item_picture;
     }
 
+const updateRequest = new sql.Request();
+updateRequest.input('itemName', sql.NVarChar, itemName);
+updateRequest.input('itemDesc', sql.NVarChar, itemDesc);
+updateRequest.input('itemPrice', sql.Decimal(10,2), itemPrice);
+updateRequest.input('categoryId', sql.Int, categoryId);
+updateRequest.input('userId', sql.Int, userId);
+updateRequest.input('item_picture', sql.NVarChar, item_picture);
+updateRequest.input('itemId', sql.Int, itemId);
 
-request.input('itemName', sql.NVarChar, itemName);
-request.input('itemDesc', sql.NVarChar, itemDesc);
-request.input('itemPrice', sql.Decimal(10,2), itemPrice);
-request.input('categoryId', sql.Int, categoryId);
-request.input('userId', sql.Int, userId);
-request.input('item_picture', sql.NVarChar, item_picture);
-request.input('itemId', sql.Int, itemId);
-
-await request.query(`
+await updateRequest.query(`
   UPDATE items
   SET
     itemName = @itemName,
