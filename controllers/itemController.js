@@ -42,6 +42,7 @@ const getAllItems = async (req, res) => {
         c.categoryName
       FROM items i
       LEFT JOIN category c ON i.categoryId = c.categoryId
+      ORDER BY i.itemName ASC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -60,6 +61,7 @@ const getAllItemsById = async (req, res) => {
       FROM items i
       LEFT JOIN category c ON i.categoryId = c.categoryId
       WHERE i.userId = ${userId}
+      ORDER BY i.itemName ASC
     `);
     res.json(result.recordset);
   } catch (err) {
@@ -73,6 +75,7 @@ const getCategories = async (req, res) => {
     await sql.connect(config);
     const result = await sql.query(`
       SELECT * FROM category WHERE userId = ${userId}
+      ORDER BY categoryName ASC
     `);
     res.json(result.recordset);
   } catch (err) {
