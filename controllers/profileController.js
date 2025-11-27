@@ -153,7 +153,7 @@ exports.updateUserProfile = async (req, res) => {
         VALUES (@companyName, @phone, @whatsapp, @location, @logo, @userId,@direction,@dollarRate,@currency)
       `);
     }
-          const profileUrl = `http://localhost:4200//TechGuide/${encodeURIComponent(companyName)}`;
+          const profileUrl = `http://localhost:4200//TechGuide/${companyName}`;
     const urlRequest = new sql.Request();
     urlRequest.input('url', sql.NVarChar(500), profileUrl);
     urlRequest.input('userId', sql.Int, userId);
